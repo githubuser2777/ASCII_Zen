@@ -328,6 +328,13 @@ func (m model) updateNaming(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if name == "" {
 				name = "ascii_video"
 			}
+			// Security: Prevent path traversal vulnerabilities
+			name = filepath.Base(name)
+			name = strings.ReplaceAll(name, string(filepath.Separator), "")
+			if name == "." || name == ".." {
+				name = "ascii_video"
+			}
+			
 			m.state = stateCompiling
 			return m, tea.Batch(
 				m.spinner.Tick,
