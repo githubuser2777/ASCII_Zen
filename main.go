@@ -20,6 +20,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+import _ "embed"
+
+//go:embed convert.py
+var convertPy []byte
+
 // ponytail: single-file TUI, state machine, no unnecessary abstractions
 
 // --- States ---
@@ -513,25 +518,15 @@ func (m model) viewDone() string {
 // metadata + frame data through ch.
 func startConversion(videoPath string, ch chan<- interface{}) tea.Cmd {
 	return func() tea.Msg {
-		// Locate convert.py next to the executable
-		exePath, err := os.Executable()
-		if err != nil {
-			close(ch)
-			return errMsg{err}
-		}
-		convertScript := filepath.Join(filepath.Dir(exePath), "convert.py")
-
-		// Fall back to CWD if not found next to exe
-		if _, err := os.Stat(convertScript); err != nil {
-			cwd, _ := os.Getwd()
-			convertScript = filepath.Join(cwd, "convert.py")
-		}
-
 		pythonCmd := "python3"
 		if _, err := exec.LookPath("python3"); err != nil {
 			pythonCmd = "python"
 		}
-		cmd := exec.Command(pythonCmd, convertScript, "--video", videoPath, "--width", "120")
+		
+		// Security: Execute embedded python script from memory via -c flag
+		// This prevents Binary Planting / Script Hijacking vulnerabilities where an
+		// attacker could place a malicious convert.py in the working directory.
+		cmd := exec.Command(pythonCmd, "-c", string(convertPy), "--video", videoPath, "--width", "120")
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			close(ch)
@@ -686,7 +681,11 @@ func loadEmbeddedFrames() ([]string, videoMeta, error) {
 		return nil, videoMeta{}, fmt.Errorf("decompressing: %w", err)
 	}
 	defer gz.Close()
-	raw, err := io.ReadAll(gz)
+	
+	// Security: Prevent Zip Bomb / unbounded memory exhaustion
+	// Cap the uncompressed data limit to 1GB
+	limitReader := io.LimitReader(gz, 1024*1024*1024)
+	raw, err := io.ReadAll(limitReader)
 	if err != nil {
 		return nil, videoMeta{}, err
 	}

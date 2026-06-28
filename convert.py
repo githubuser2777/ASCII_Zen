@@ -22,6 +22,11 @@ def main():
     p.add_argument("--width", type=int, default=120, help="ASCII output width in characters")
     args = p.parse_args()
 
+    # Security: Prevent Memory Exhaustion DoS by capping the width
+    if args.width < 1 or args.width > 2000:
+        sys.stderr.write("error: width must be between 1 and 2000\n")
+        sys.exit(1)
+
     cap = cv2.VideoCapture(args.video)
     if not cap.isOpened():
         sys.stderr.write(f"error: cannot open video: {args.video}\n")
